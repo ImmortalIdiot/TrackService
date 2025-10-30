@@ -1,0 +1,42 @@
+type Track {
+    id: ID!
+    title: String!
+    author: String!
+    byteSequence: String!
+    continuation: Int!
+    status: TrackStatus!
+    createdDate: String!
+}
+
+enum TrackStatus {
+    ACTIVE
+    ARCHIVED
+    DELETED
+}
+
+type TrackPage {
+    content: [Track]!
+    pageNumber: Int!
+    pageSize: Int!
+    totalElements: Int!
+    totalPages: Int!
+    last: Boolean!
+}
+
+type Query {
+    trackById(id: ID!): Track
+    tracks(page: Int = 0, size: Int = 10): TrackPage
+}
+
+input TrackInput {
+    title: String!
+    author: String!
+    byteSequence: String!
+    continuation: Int!
+}
+
+type Mutation {
+    createTrack(input: TrackInput!): Track
+    deleteTrack(id: ID!): ID
+    archiveTrack(id: ID!): Track
+}
