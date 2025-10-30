@@ -22,7 +22,7 @@ interface TrackService {
 }
 
 @Service
-internal class TrackServiceInMemory(
+internal class TrackServiceImpl(
     private val rabbitMqTemplate: RabbitTemplate,
     private val repository: InMemoryRepository
 ) : TrackService {
