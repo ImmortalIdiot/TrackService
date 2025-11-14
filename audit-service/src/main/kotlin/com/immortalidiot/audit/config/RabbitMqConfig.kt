@@ -1,6 +1,7 @@
 package com.immortalidiot.audit.config
 
-import org.springframework.amqp.support.converter.SimpleMessageConverter
+import com.fasterxml.jackson.databind.ObjectMapper
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -8,7 +9,7 @@ import org.springframework.context.annotation.Configuration
 class RabbitMQConfig {
 
     @Bean
-    fun messageConverter() = SimpleMessageConverter().apply {
-        setAllowedListPatterns(listOf("com.immortalidiot.events.*"))
+    fun messageConverter(): Jackson2JsonMessageConverter {
+        return Jackson2JsonMessageConverter(ObjectMapper().findAndRegisterModules())
     }
 }
