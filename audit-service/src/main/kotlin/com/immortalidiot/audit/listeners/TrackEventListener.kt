@@ -2,10 +2,10 @@ package com.immortalidiot.audit.listeners
 
 import com.immortalidiot.events.TrackEvent
 import org.slf4j.LoggerFactory
-import org.springframework.amqp.rabbit.annotation.Exchange
-import org.springframework.amqp.rabbit.annotation.Queue
-import org.springframework.amqp.rabbit.annotation.QueueBinding
-import org.springframework.amqp.rabbit.annotation.RabbitListener
+import org.springframework.amqp.rabbit.annotation.*
+import org.springframework.amqp.support.AmqpHeaders
+import org.springframework.messaging.handler.annotation.Header
+import org.springframework.messaging.handler.annotation.Payload
 import org.springframework.stereotype.Component
 
 
@@ -13,36 +13,115 @@ import org.springframework.stereotype.Component
 class TrackEventListener {
 
     @RabbitListener(
-        bindings = [QueueBinding(
-            value = Queue(name = QUEUE_CREATED_NAME, durable = "true"),
-            exchange = Exchange(name = EXCHANGE_NAME, type = "topic"),
-            key = arrayOf(ROUTING_KEY_TRACK_CREATED)
-        )]
+        bindings = [
+            QueueBinding(
+                value = Queue(
+                    name = QUEUE_NAME,
+                    durable = "true",
+                    arguments = [
+                        Argument(name = "x-dead-letter-exchange", value = DLX_EXCHANGE),
+                        Argument(name = "x-dead-letter-routing-key", value = DLQ_ROUTING_KEY)
+                    ]
+                ),
+                exchange = Exchange(
+                    name = EXCHANGE_NAME,
+                    type = "topic",
+                    durable = "true"
+                ),
+                key = [ROUTING_KEY_TRACK_CREATED]
+            )
+        ]
     )
-    fun handleTrackCreatedEvent(event: TrackEvent.TrackCreatedEvent) {
-        LOG.info("Received new track event: $event")
-        // Здесь могла бы быть логика аудита или уведомлений
+    fun handleTrackCreatedEvent(
+        @Payload event: TrackEvent.TrackCreatedEvent,
+        channel: com.rabbitmq.client.Channel,
+        @Header(AmqpHeaders.DELIVERY_TAG) deliveryTag: Long
+    ) {
+        try {
+            log.info("Received TrackCreatedEvent: $event")
+
+            if (event.title.equals("CRASH", ignoreCase = true)) {
+                throw RuntimeException("Simulating error for DLQ test")
+            }
+
+            log.info("Notification sent for new track '${event.title}'!")
+            channel.basicAck(deliveryTag, false)
+
+        } catch (e: Exception) {
+            log.error("Failed to process event: $event. Sending to DLQ.", e)
+            channel.basicNack(deliveryTag, false, false)
+        }
     }
 
     @RabbitListener(
-        bindings = [QueueBinding(
-            value = Queue(name = QUEUE_DELETED_NAME, durable = "true"),
-            exchange = Exchange(name = EXCHANGE_NAME, type = "topic"),
-            key = arrayOf(ROUTING_KEY_TRACK_DELETED)
-        )]
+        bindings = [
+            QueueBinding(
+                value = Queue(
+                    name = QUEUE_NAME,
+                    durable = "true",
+                    arguments = [
+                        Argument(name = "x-dead-letter-exchange", value = DLX_EXCHANGE),
+                        Argument(name = "x-dead-letter-routing-key", value = DLQ_ROUTING_KEY)
+                    ]
+                ),
+                exchange = Exchange(
+                    name = EXCHANGE_NAME,
+                    type = "topic",
+                    durable = "true"
+                ),
+                key = [ROUTING_KEY_TRACK_DELETED]
+            )
+        ]
     )
-    fun handleTrackDeletedEvent(event: TrackEvent.TrackDeletedEvent) {
-        LOG.info("Track deleted with id: ${event.trackId}")
-        // Здесь могла бы быть логика аудита или уведомлений
+    fun handleTrackDeletedEvent(
+        @Payload event: TrackEvent.TrackDeletedEvent,
+        channel: com.rabbitmq.client.Channel,
+        @Header(AmqpHeaders.DELIVERY_TAG) deliveryTag: Long
+    ) {
+        try {
+            log.info("Received TrackDeletedEvent: $event")
+
+            log.info("Notifications cancelled for deleted trackId ${event.trackId}!")
+            channel.basicAck(deliveryTag, false)
+
+        } catch (e: Exception) {
+            log.error("Failed to process event: $event. Sending to DLQ.", e)
+            channel.basicNack(deliveryTag, false, false)
+        }
+    }
+
+    @RabbitListener(
+        bindings = [
+            QueueBinding(
+                value = Queue(
+                    name = DLQ_QUEUE_NAME,
+                    durable = "true"
+                ),
+                exchange = Exchange(
+                    name = DLX_EXCHANGE,
+                    type = "topic",
+                    durable = "true"
+                ),
+                key = [DLQ_ROUTING_KEY]
+            )
+        ]
+    )
+    fun handleDlqMessages(failedMessage: Any) {
+        log.error("!!! Received message in DLQ: {}", failedMessage)
+        // Логика оповещения администраторов
     }
 
     companion object {
-        private val LOG = LoggerFactory.getLogger(TrackEventListener::class.java)
+        private val log = LoggerFactory.getLogger(TrackEventListener::class.java)
 
-        const val QUEUE_CREATED_NAME: String = "notification-created-queue"
-        const val QUEUE_DELETED_NAME: String = "notification-deleted-queue"
-        const val EXCHANGE_NAME: String = "tracks-exchange"
-        const val ROUTING_KEY_TRACK_CREATED: String = "track.created"
-        const val ROUTING_KEY_TRACK_DELETED: String = "track.deleted"
+        const val EXCHANGE_NAME = "tracks-exchange"
+        const val QUEUE_NAME = "notification-queue"
+
+        const val ROUTING_KEY_TRACK_CREATED = "track.created"
+        const val ROUTING_KEY_TRACK_DELETED = "track.deleted"
+
+        const val DLQ_QUEUE_NAME = "notification-queue.dlq"
+        const val DLX_EXCHANGE = "dlx-exchange"
+        const val DLQ_ROUTING_KEY = "dlq.notifications"
     }
 }
