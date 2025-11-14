@@ -7,10 +7,13 @@ import org.springframework.amqp.support.AmqpHeaders
 import org.springframework.messaging.handler.annotation.Header
 import org.springframework.messaging.handler.annotation.Payload
 import org.springframework.stereotype.Component
+import java.util.concurrent.ConcurrentHashMap
 
 
 @Component
 class TrackEventListener {
+
+    private val processedTrackCreations: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
     @RabbitListener(
         bindings = [
@@ -38,6 +41,12 @@ class TrackEventListener {
         @Header(AmqpHeaders.DELIVERY_TAG) deliveryTag: Long
     ) {
         try {
+            if (!processedTrackCreations.add(event.trackId)) {
+                log.warn("Duplicate event received for trackId: {}", event.trackId)
+                channel.basicAck(deliveryTag, false)
+                return
+            }
+
             log.info("Received TrackCreatedEvent: $event")
 
             if (event.title.equals("CRASH", ignoreCase = true)) {
@@ -45,7 +54,8 @@ class TrackEventListener {
             }
 
             log.info("Notification sent for new track '${event.title}'!")
-            channel.basicAck(deliveryTag, false)
+
+            // channel.basicAck(deliveryTag, false)
 
         } catch (e: Exception) {
             log.error("Failed to process event: $event. Sending to DLQ.", e)
